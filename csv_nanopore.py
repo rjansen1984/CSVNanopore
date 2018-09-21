@@ -62,9 +62,17 @@ def read_csv():
     count = 0
     for csv in onlyfiles:
         klist = []
-        tax = []
-        tids = []
         taxnames = []
+        if "_2" in csv:
+            acc_column = 6
+            lca_column = 7
+            lca_data = ['0', '1']
+            taxid_column = 4
+        else:
+            acc_column = 3
+            lca_column = 8
+            lca_data = ['1', '2']
+            taxid_column = 2
         with open(mypath + csv) as nf:
             linenr = 0
             for line in nf:
@@ -72,44 +80,39 @@ def read_csv():
                     line = line.split(',')
                     name = ""
                     if linenr > 0:
-                        if float(line[3]) >= 80 and line[8] in ['1', '2']:
-                            tids.append(line[4])
+                        if float(line[acc_column]) >= 80 and line[lca_column].strip('\r\n') in lca_data:
                             if rank_dict[level] == "species":
-                                taxid2name = ncbi.get_taxid_translator([int(line[2])])
-                                for tid, tname in taxid2name.iteritems():
+                                taxid2name = ncbi.get_taxid_translator([int(line[taxid_column])])
+                                for dummytid, tname in taxid2name.iteritems():
                                     namelist = str(tname).split(" ")[:2]
                                 for nl in namelist:
                                     name += str(nl) + " "
-                                taxnames.append(str(name))
-                            elif rank_dict[level] == "genus":
-                                taxid2name = ncbi.get_taxid_translator([int(line[7])])
-                                for tid, tname in taxid2name.iteritems():
-                                    namelist = str(tname).split(" ")[:2]
-                                for nl in namelist:
-                                    name += str(nl) + " "
+                                name += line[lca_column].strip('\r\n')
                                 taxnames.append(str(name))
                             else:
-                                taxids = [line[2]]
+                                taxids = [line[taxid_column]]
                                 desired_ranks = [rank_dict[level]]
                                 for taxid in taxids:
                                     ranks = get_desired_ranks(taxid, desired_ranks)
-                                    for key, rank in ranks.items():
+                                    for dummykey, rank in ranks.items():
                                         if rank != '<not present>':
                                             taxid2name = ncbi.get_taxid_translator([int(rank)])
-                                            for tid, tname in taxid2name.iteritems():
+                                            for dummytid, tname in taxid2name.iteritems():
                                                 namelist = str(tname).split(" ")[:2]
                                             for nl in namelist:
                                                 name += str(nl) + " "
+                                            name += line[lca_column].strip('\r\n')
                                             taxnames.append(str(name))
                 linenr += 1
+            # nf.close()
             namecounter = Counter(taxnames)
             for k, v in namecounter.iteritems():
                 if k not in d and count > 0:
-                    for c in range(0, count):
+                    for dummyc in range(0, count):
                         d[k].append(0)
                 d[k].append(v)
                 klist.append(k)
-            for dk, dv in d.iteritems():
+            for dk, dummydv in d.iteritems():
                 if dk not in klist:
                     d[dk].append(0)
             count += 1
@@ -196,7 +199,7 @@ def percentage_nanopore(nanopore):
             ncount = 0
             header = nano.readline()
             samples = header.split(',')
-            for i, s in enumerate(samples):
+            for i, dummys in enumerate(samples):
                 if i > 0:
                     perc_nano.write(samples[i].strip("\n").strip(".csv") + '_#,' + samples[i].strip("\n").strip(".csv") + '_%,')
                 elif i == 0:
@@ -228,8 +231,31 @@ def sort_file(ifilename, ofilename):
     ofilename = ofilename
     with open(ifilename, 'r') as infile, open(ofilename, 'a') as outfile:
         # output dict needs a list for new column ordering. Enter the column names in order.
-        fieldnames = []
-        fields = ['species']
+        fieldnames = [
+            '', 4371, '4371_2', 5013, 4278, '4278_2', 4322, '4322_2', 
+            6043, 4282, '4282_2', 6015, 5028, 5044, 5006, 4206, 4294, 
+            4364, '4364_2', 5136, 4198, 5408, 4343, '4343_2', 4195, 
+            5066, 4135, 4243, '4243_2', 4059, 6030, 5418, 6026, 5164, 
+            4395, 4233, 6119, 4356, '4356_2', 5001, 5145, 4186, 6003, 
+            4124, 4323, '4323_2', 5082, 4043, 5411, 6036, 6045, 4187,
+            4185, 5168, 5027, 4280, '4280_2', 6020, 5421, 5186, 6107,
+            6009, 6019, 5067, 5417, 4179, 5204, 6014, 5103, 6334, 5032,
+            5163, 5304, 5425, 6035, 4306, '4306_2', 5306, 5015, 6049,
+            6010, 6074, 'EC01', 'C1', 'C15'
+        ]
+        # fieldnames = [
+        #     '', 4371, 5013, 4278, 4322, 6043, 4282, 6015, 
+        #     5028, 5044, 5006, 4206, 4294, 4364, 5136, 4198, 
+        #     5408, 4343, 4195, 5066, 4135, 4243, 4059, 6030, 
+        #     5418, 6026, 5164, 4395, 4233, 6119, 4356, 5001, 
+        #     5145, 4186, 6003, 4124, 4323, 5082, 4043, 5411, 
+        #     6036, 6045, 4187, 4185, 5168, 5027, 4280, 6020, 
+        #     5421, 5186, 6107, 6009, 6019, 5067, 5417, 4179, 
+        #     5204, 6014, 5103, 6334, 5032,5163, 5304, 5425, 
+        #     6035, 4306, 5306, 5015, 6049, 6010, 6074, 
+        #     'EC01', 'C1', 'C15'
+        # ]
+        fields = [rank_dict[level]]
         for fn in fieldnames:
             if fn != "":
                 fields.append(str(fn) + '_#')
@@ -253,7 +279,7 @@ if __name__ == '__main__':
                 print "Getting " + rank_dict[level] + " from csv files...\n"
             read_csv()
             # Add the input and output file to sort the csv.
-            sort_file("", "")
+            sort_file("percentage_" + rank_dict[level] + ".csv", rank_dict[level] + "_sorted.csv")
         else:
             print "Taxonomy database is updating...\n"
             ncbi.update_taxonomy_database()
