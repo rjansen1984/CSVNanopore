@@ -7,22 +7,7 @@ from collections import Counter
 from collections import defaultdict
 from ete3 import NCBITaxa
 
-
-d = defaultdict(list)
-taxids = []
-mypath = input("Enter path to csv files (i.e. /home/user/csv/files/): ")
-allfiles = [f for f in listdir(mypath) if isfile(join(mypath, f))]
-# print(str(allfiles))
-onlyfiles = [s for s in allfiles if '.csv' in s]
-filecount = len(onlyfiles)
-level = input("1: phylum ----> 2: class ----> 3: order ----> 4: family ----> 5: genus ----> 6: species\nEnter rank number: ")
-ncbi = NCBITaxa()
-DEFAULT_TAXADB = os.path.join(os.environ.get('HOME', '/'), '.etetoolkit', 'taxa.sqlite')
-DB_VERSION = 2
-rank_dict = {"1": "phylum", "2": "class", "3": "order", "4": "family", "5": "genus", "6": "species"}
-
-
-def is_taxadb_up_to_date(dbfile=DEFAULT_TAXADB):
+def is_taxadb_up_to_date(dbfile):
     """
     Check if a valid and up-to-date taxa.sqlite database exists
     If dbfile is not specified, DEFAULT_TAXADB is assumed
@@ -54,6 +39,60 @@ def get_desired_ranks(taxid, desired_ranks):
     ranks2lineage = dict((rank, taxid) for (taxid, rank) in lineage2ranks.items())
     return{'{}_id'.format(rank): ranks2lineage.get(rank, '<not present>') for rank in desired_ranks}
 
+def read_csv_2(mypath, onlyfiles, rank):
+    print("Reading input files")
+    taxID_dict = {}
+    taxID_unique = []
+    sn_unique = []    
+
+    lca_data = ['0', '1']
+    taxid_column = 4
+    barcode_column = 5
+    acc_column = 6
+    lca_column = 7
+
+    for csv in onlyfiles:
+        with open(mypath + csv) as fp:
+            next(fp)
+            
+            for line in fp:
+                fields = line.strip().split(",")
+                sample_name = str(csv+fields[barcode_column])
+                taxid = fields[taxid_column]
+                taxid2name = ncbi.get_taxid_translator(taxid)
+                if rank in taxid2name:
+                print(taxid2name[rank])
+
+                if taxid in taxID_dict:
+                    if sample_name in taxID_dict[taxid]:
+                        taxID_dict[fields[taxid_column]][str(csv+fields[barcode_column])] += 1
+                    else:
+                        sn_unique.append(sample_name)
+                        taxID_dict[fields[taxid_column]] = {str(csv+fields[barcode_column]) : 0}
+                else:
+                    taxID_unique.append(taxid)
+                    sn_unique.append(sample_name)
+                    taxID_dict[fields[taxid_column]] = {str(csv+fields[barcode_column]) : 0}
+    taxID_unique = set(taxID_unique)
+    sn_unique = set(sn_unique)
+    taxID_dict.pop('-1', None)
+    return taxID_dict, taxID_unique, sn_unique
+
+def write_csv(taxID_dict, taxID_unique, sn_unique):
+    print("Writing output files")
+    with open(rank_dict[level] + '.csv', 'w') as tf:
+        tf.write(rank_dict[level] + "," + ",".join(sn_unique) + "\n")
+        for taxid, sample_ID in taxID_dict.items():
+            org_count = []
+            taxid2name = ncbi.get_taxid_translator(taxid)
+            # taxid2name = ncbi.get_rank(taxid)
+            if rank in taxid2name:
+                print(taxid2name[rank])
+                for sample in sn_unique:
+                    pass
+                
+            
+        
 
 def read_csv():
     """
@@ -68,6 +107,7 @@ def read_csv():
         lca_column = 7
         lca_data = ['0', '1']
         taxid_column = 4
+        barcode_column = 5
         with open(mypath + csv) as nf:
             linenr = 0
             for line in nf:
@@ -142,6 +182,7 @@ def make_rank_csv():
             line = ""
             line += str(k[0])
             line += ','
+            print(line)
             for v in k[1]:
                 line += str(v)
                 if x < len(onlyfiles) - 1:
@@ -215,7 +256,7 @@ def percentage_nanopore(nanopore):
     print ("Writing ", output, "... finished")
 
 
-def sort_file(ifilename, ofilename):
+def sort_file(ifilename, ofilentaxID_dict, taxID_unique, sn_uniqueame):
     """
     Sorting the nanopore and/or illumina files based on the headers in the fieldnames list
     :param ifilename: Name of the input file with the Nanopore or Illumina info
@@ -257,15 +298,34 @@ def sort_file(ifilename, ofilename):
 
 
 if __name__ == '__main__':
+    d = defaultdict(list)
+    taxids = []
+    # mypath = input("Enter path to csv files (i.e. /home/user/csv/files/): ")
+    mypath = "/home/willem/iKnowIT/output_epi2me/"
+    allfiles = [f for f in listdir(mypath) if isfile(join(mypath, f))]
+    onlyfiles = [s for s in allfiles if '.csv' in s]
+    filecount = len(onlyfiles)
+    # level = input("1: phylum ----> 2: class ----> 3: order ----> 4: family ----> 5: genus ----> 6: species\nEnter rank number: ")
+    level = "6"
+    ncbi = NCBITaxa()
+    DEFAULT_TAXADB = os.path.join(os.environ.get('HOME', '/'), '.etetoolkit', 'taxa.sqlite')
+    DB_VERSION = 2
+    rank_dict = {"2": "phylum", "3": "class", "4": "order", "5": "family", "6": "genus", "7": "species"}
+    
+    rank = int("7")
+    taxID_dict, taxID_unique, sn_unique = read_csv_2(mypath, onlyfiles, rank)
+    write_csv(taxID_dict, taxID_unique, sn_unique)
+
     try:
         if is_taxadb_up_to_date(DEFAULT_TAXADB):
             if rank_dict[level] not in ["species"]:
                 print ("Getting " + rank_dict[level] + " names from NCBI...\n")
             else:
                 print ("Getting " + rank_dict[level] + " from csv files...\n")
-            read_csv()
+            #read_csv()
+
             # Add the input and output file to sort the csv.
-            sort_file("percentage_" + rank_dict[level] + ".csv", rank_dict[level] + "_sorted.csv")
+            # sort_file("percentage_" + rank_dict[level] + ".csv", rank_dict[level] + "_sorted.csv")
         else:
             print ("Taxonomy database is updating...\n")
             ncbi.update_taxonomy_database()
