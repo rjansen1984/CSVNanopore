@@ -41,7 +41,7 @@ def get_input():
             allfiles = [f for f in listdir(mypath) if isfile(join(mypath, f))]
             qcfiles = [f for f in listdir(mypathqc) if isfile(join(mypathqc, f))]
             onlyfiles = [s for s in qcfiles if '22.csv' in s]
-            searchrank = ["family", "genus"]
+            searchrank = ["phylum","class","order","family", "genus"]
             return mypath, mypathqc, minqscore, allfiles, qcfiles, onlyfiles, searchrank
 
 
@@ -286,9 +286,12 @@ def make_rank_csv(headers):
     print("Creating csv file based on rank...\n")
     print()
     with open('otu_count.csv', 'w') as tf:
+        phylum = ""
+        taxclass = ""
+        order = ""
         family = ""
         genus = ""
-        tf.write('family,genus,best (rank),')
+        tf.write('phylum,class,order,family,genus,best (rank),')
         i = 0
         for h in headers:
             tf.write(h)
@@ -311,16 +314,28 @@ def make_rank_csv(headers):
                             if rank != '<not present>':
                                 taxid2name = ncbi.get_taxid_translator([int(rank)])
                                 for dummytid, tname in taxid2name.items():
-                                    if srank == "family":
+                                    if srank == "phylum":
+                                        phylum = str(tname)
+                                    elif srank == "class":
+                                        taxclass = str(tname)
+                                    elif srank == "order":
+                                        order = str(tname)
+                                    elif srank == "family":
                                         family = str(tname)
                                     elif srank == "genus":
                                         genus = str(tname)
                             else:
-                                if srank == "family":
+                                if srank == "phylum":
+                                        phylum = "NA"
+                                elif srank == "class":
+                                    taxclass = "NA"
+                                elif srank == "order":
+                                    order = "NA"
+                                elif srank == "family":
                                     family = "NA"
                                 elif srank == "genus":
                                     genus = "NA"
-            line += str(family + ',' + genus + ',')
+            line += str(phylum + ',' + taxclass + ',' + order + ',' + family + ',' + genus + ',')
             line += str(key + ',')
             for v in value:
                 line += str(v[0])
@@ -330,8 +345,8 @@ def make_rank_csv(headers):
                     line += '\n'
                 x += 1
             tf.write(line)
-        total_line = "SUM,,"
-        for i in range(3, len(headers) + 3):
+        total_line = "SUM,,,,,"
+        for i in range(6, len(headers) + 6):
             try:
                 total = 0
                 cr = csv.reader(open('otu_count.csv'))
@@ -381,16 +396,13 @@ def percentage_nanopore(filename):
             header = nano.readline()
             samples = header.split(',')
             for i, dummys in enumerate(samples):
+                options = {0: 'phylum,', 1: 'class,', 2: 'order,', 3: 'family,', 4: 'genus,', 5: 'best (rank),'}
                 headerline = ""
-                if i == 0:
-                    headerline += 'family,'
-                elif i == 1:
-                    headerline += 'genus,'
-                elif i == 2:
-                    headerline += 'best (rank),'
-                elif i > 2:
+                if i in options.keys():
+                    headerline += options.get(i)
+                if i > 5:
                     headerline += samples[i].strip("\n").strip(".csv")
-                if i > 2 and i < len(samples)-1:
+                if i > 5 and i < len(samples) - 1:
                     headerline += ","
                 perc_nano.write(headerline)
             perc_nano.write("\n")
@@ -399,19 +411,18 @@ def percentage_nanopore(filename):
                 if ncount < count:
                     wline = ""
                     sample = line.split(',')
-                    wline += sample[0].strip("\n").strip(".csv") + ','
-                    wline += sample[1].strip("\n").strip(".csv") + ','
-                    wline += sample[2].strip("\n").strip(".csv") + ','
-                    for x in range(2, len(sample) - 1):
+                    wline += (sample[0] + ',' + sample[1] + ',' + sample[2] +
+                              ',' + sample[3] + ',' + sample[4] + ',' + sample[5] + ',')
+                    for x in range(5, len(sample) - 1):
                         try:
                             percentage = float(
                                 100*float(sample[x + 1].strip('\n'))/float(sum_row[x]))
                         except ZeroDivisionError:
                             percentage = 0
                         wline += str(percentage)
-                        if x < len(sample)-2:
+                        if x < len(sample) - 2:
                             wline += ','
-                        elif x > len(sample)-2:
+                        elif x > len(sample) - 2:
                             wline += '\n'
                     perc_nano.write(wline)
                     perc_nano.write("\n")
