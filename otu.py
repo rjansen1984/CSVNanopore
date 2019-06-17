@@ -23,9 +23,13 @@ barcodes = ["BC01", "BC02", "BC03", "BC04", "BC05", "BC06",
 
 
 def get_input():
-    # taxids = []
-    # mypath = "D:/OTU/csv/"
-    # mypathqc = "D:/OTU/qc/"
+    """Get all user input and return all files and settings.
+    
+    Returns:
+        Filepaths and all QC and classification files.
+        Searchranks that will be added to the OTU table.
+        Minimum qscore used for filtering the reads.
+    """
     while True:
         mypath = input("Enter classification files path: ")
         mypathqc = input("Enter QC files path: ")
@@ -39,20 +43,6 @@ def get_input():
             onlyfiles = [s for s in qcfiles if '22.csv' in s]
             searchrank = ["family", "genus"]
             return mypath, mypathqc, minqscore, allfiles, qcfiles, onlyfiles, searchrank
-
-# mypath = input("Enter classification files path: ")
-# mypathqc = input("Enter QC files path: ")
-# minqscore = input("Please enter the minimun qc score per read: ")
-# allfiles = [f for f in listdir(mypath) if isfile(join(mypath, f))]
-# qcfiles = [f for f in listdir(mypathqc) if isfile(join(mypathqc, f))]
-# onlyfiles = [s for s in qcfiles if '39.csv' in s]
-# searchrank = ["family", "genus"]
-# ncbi = NCBITaxa()
-# DEFAULT_TAXADB = os.path.join(os.environ.get(
-#     'HOME', '/'), '.etetoolkit', 'taxa.sqlite')
-# DB_VERSION = 2
-# barcodes = ["BC01", "BC02", "BC03", "BC04", "BC05", "BC06",
-#             "BC07", "BC08", "BC09", "BC10", "BC11", "BC12"]
 
 
 def is_taxadb_up_to_date(dbfile=DEFAULT_TAXADB):
