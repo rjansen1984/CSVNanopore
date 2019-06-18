@@ -18,8 +18,6 @@ ncbi = NCBITaxa()
 DEFAULT_TAXADB = os.path.join(os.environ.get(
     'HOME', '/'), '.etetoolkit', 'taxa.sqlite')
 DB_VERSION = 2
-barcodes = ["BC01", "BC02", "BC03", "BC04", "BC05", "BC06",
-            "BC07", "BC08", "BC09", "BC10", "BC11", "BC12"]
 
 
 def get_input():
@@ -34,15 +32,21 @@ def get_input():
         mypath = input("Enter classification files path: ")
         mypathqc = input("Enter QC files path: ")
         minqscore = input("Please enter the minimun qc score per read: ")
+        barcodeinput = input("Enter a list of barcodes (comma seperated): ")
+        if barcodeinput == "":
+            # Default barcodes
+            barcodes = ["BC01", "BC02", "BC03", "BC04", "BC05", "BC06",
+                        "BC07", "BC08", "BC09", "BC10", "BC11", "BC12"]
+        else:
+            barcodes = barcodeinput.split(',')
         if mypath == "" or mypathqc == "" or minqscore == "":
             print("Invalid input.")
             get_input()
         else:
-            allfiles = [f for f in listdir(mypath) if isfile(join(mypath, f))]
             qcfiles = [f for f in listdir(mypathqc) if isfile(join(mypathqc, f))]
             onlyfiles = [s for s in qcfiles if '22.csv' in s]
             searchrank = ["phylum","class","order","family", "genus"]
-            return mypath, mypathqc, minqscore, allfiles, qcfiles, onlyfiles, searchrank
+            return mypath, mypathqc, minqscore, qcfiles, onlyfiles, searchrank, barcodes
 
 
 def is_taxadb_up_to_date(dbfile=DEFAULT_TAXADB):
@@ -103,6 +107,7 @@ def read_basecalling_qc():
     print()
     ok_read_ids = []
     barcode_list = []
+    barcode_list_clean = []
     for qcfile in onlyfiles:
         read_id_column = 1
         barcode_column = 2
@@ -113,7 +118,7 @@ def read_basecalling_qc():
             for line in qf:
                 if ',,' not in line:
                     line = line.split(',')
-                    if line[barcode_column] != "NA":
+                    if line[barcode_column] in barcodes:
                         if linenr > 0:
                             if int(line[seqlen_column]) >= 1400 and int(line[seqlen_column]) <= 1700:
                                 if float(line[mean_qscore_column].strip('\n')) >= int(minqscore):
@@ -121,9 +126,12 @@ def read_basecalling_qc():
                                     barcode_list.append(line[barcode_column])
                 linenr += 1
         barcode_dict = Counter(barcode_list)
+        barcode_dict = sorted(barcode_dict.items())
+        for bcd in barcode_dict:
+            barcode_list_clean.append(bcd[0])
         print(len(ok_read_ids), "reads will be used")
         print()
-    return ok_read_ids, barcode_dict
+    return ok_read_ids, barcode_dict, barcode_list_clean
 
 
 def read_csv():
@@ -133,13 +141,13 @@ def read_csv():
         IndexError: Set rank to (no rank) is none is found.
     """
     taxnames = []
-    allnames, headers, randombc = get_all_species(ok_read_ids)
+    allnames, headers = get_all_species(ok_read_ids)
     for csv in onlyfiles:
         read_id_column = 1
         barcode_column = 5
         acc_column = 6
         taxid_column = 4
-        for bc in barcodes:
+        for bc in barcode_list_clean:
             print("Checking", bc, "in", csv)
             with open(mypath + csv) as nf:
                 linenr = 0
@@ -195,6 +203,28 @@ def read_csv():
     print("Finished\n")
 
 
+def make_subset(reads_per_barcode):
+    """Create a subset of read IDs.
+    
+    Arguments:
+        reads_per_barcode: The maximum amount of reads per barcode.
+    
+    Returns:
+        [type] -- [description]
+    """
+    subset = {}
+    for barcode, bcount in barcode_dict.items():
+        values = []
+        if bcount > reads_per_barcode:
+            for dummyx in range(reads_per_barcode):
+                values.append(random.randint(1,bcount))
+        else:
+            for x in range(1, bcount):
+                values.append(x)
+        subset[barcode] = values
+    return subset
+
+
 def get_all_species(ok_read_ids):
     """Get all species that are found in the csv files.
     
@@ -208,16 +238,6 @@ def get_all_species(ok_read_ids):
     Raises:
         IndexError: Set rank to (no rank) if no rank is found in the NCBI taxonomy database.
     """
-    randombc = {}
-    for barcode, bcount in barcode_dict.items():
-        values = []
-        if bcount > 400:
-            for dummyx in range(420):
-                values.append(random.randint(1,bcount))
-        else:
-            for x in range(1, bcount):
-                values.append(x)
-        randombc[barcode] = values
     allnameslist = []
     headers = []
     for csv in onlyfiles:
@@ -228,7 +248,7 @@ def get_all_species(ok_read_ids):
         barcode_column = 5
         acc_column = 6
         taxid_column = 4
-        for bc in barcodes:
+        for bc in barcode_list_clean:
             headers.append(csv.strip(".csv") + bc)
         with open(mypath + csv) as nf:
             print("Reading csv file...")
@@ -242,7 +262,7 @@ def get_all_species(ok_read_ids):
                         if (
                             float(line[acc_column]) >= 80 and
                             line[read_id_column] in ok_read_ids and
-                            line[barcode_column] != "NA"
+                            line[barcode_column] in barcode_list_clean
                         ):
                             bestrankdict = ncbi.get_rank([int(line[taxid_column])])
                             bestrank = list(bestrankdict.values())
@@ -269,7 +289,7 @@ def get_all_species(ok_read_ids):
     allnames = list(set(allnameslist))
     print(len(allnames), "species found!")
     print()
-    return allnames, headers, randombc
+    return allnames, headers
 
 
 def make_rank_csv(headers):
@@ -441,8 +461,8 @@ if __name__ == '__main__':
         print("--------------------------------------------------------------------")
         print("Starting OTU script at", datetime.now().strftime("%d-%m-%Y %H:%M:%S"))
         print("--------------------------------------------------------------------")
-        mypath, mypathqc, minqscore, allfiles, qcfiles, onlyfiles, searchrank = get_input()
-        ok_read_ids, barcode_dict = read_basecalling_qc()
+        mypath, mypathqc, minqscore, qcfiles, onlyfiles, searchrank, barcodes = get_input()
+        ok_read_ids, barcode_dict, barcode_list_clean = read_basecalling_qc()
         read_csv()
         end = datetime.now()
         runtime = end - start
