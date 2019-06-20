@@ -1,4 +1,5 @@
 import os
+import sys
 import sqlite3
 import csv
 import re
@@ -31,6 +32,7 @@ def get_input():
     while True:
         mypath = input("Enter classification files path: ")
         mypathqc = input("Enter QC files path: ")
+        run = input("Enter run number (leave empty for all runs available in folder): ")
         minqscore = input("Please enter the minimun qc score per read: ")
         barcodeinput = input("Enter a list of barcodes (comma seperated): ")
         if barcodeinput == "":
@@ -44,7 +46,7 @@ def get_input():
             get_input()
         else:
             qcfiles = [f for f in listdir(mypathqc) if isfile(join(mypathqc, f))]
-            onlyfiles = [s for s in qcfiles if '22.csv' in s]
+            onlyfiles = [s for s in qcfiles if run + '.csv' in s]
             searchrank = ["phylum","class","order","family", "genus"]
             return mypath, mypathqc, minqscore, qcfiles, onlyfiles, searchrank, barcodes
 
@@ -101,13 +103,15 @@ def read_basecalling_qc():
     Returns:
         A list of reads that passed the filtering steps.
         A dictionary with read counts per barcode.
+    
+    Raises:
+        ValueError: If qscore column is not a float skip read.
     """
     print()
     print("Filtering reads...")
-    print()
-    ok_read_ids = []
+    ok_read_ids = {}
+    read_ids = []
     barcode_list = []
-    barcode_list_clean = []
     for qcfile in onlyfiles:
         read_id_column = 1
         barcode_column = 2
@@ -118,20 +122,21 @@ def read_basecalling_qc():
             for line in qf:
                 if ',,' not in line:
                     line = line.split(',')
-                    if line[barcode_column] in barcodes:
+                    if line[barcode_column] != "NA":
                         if linenr > 0:
                             if int(line[seqlen_column]) >= 1400 and int(line[seqlen_column]) <= 1700:
-                                if float(line[mean_qscore_column].strip('\n')) >= int(minqscore):
-                                    ok_read_ids.append(line[read_id_column])
-                                    barcode_list.append(line[barcode_column])
+                                try:
+                                    if float(line[mean_qscore_column].strip('\n')) >= int(minqscore):
+                                        read_ids.append(line[read_id_column])
+                                        barcode_list.append(line[barcode_column])
+                                except ValueError:
+                                    pass
                 linenr += 1
+        ok_read_ids[qcfile] = read_ids
         barcode_dict = Counter(barcode_list)
         barcode_dict = sorted(barcode_dict.items())
-        for bcd in barcode_dict:
-            barcode_list_clean.append(bcd[0])
-        print(len(ok_read_ids), "reads will be used")
-        print()
-    return ok_read_ids, barcode_dict, barcode_list_clean
+        print(len(ok_read_ids.get(qcfile)), "reads will be used")
+    return ok_read_ids, barcode_dict
 
 
 def read_csv():
@@ -147,7 +152,7 @@ def read_csv():
         barcode_column = 5
         acc_column = 6
         taxid_column = 4
-        for bc in barcode_list_clean:
+        for bc in barcodes:
             print("Checking", bc, "in", csv)
             with open(mypath + csv) as nf:
                 linenr = 0
@@ -158,8 +163,8 @@ def read_csv():
                         if line[barcode_column] == bc:
                             if linenr > 0:
                                 if (
-                                    float(line[acc_column]) >= 80 and
-                                    line[read_id_column] in ok_read_ids
+                                    float(line[acc_column]) >= 88 and
+                                    line[read_id_column] in ok_read_ids.get(csv)
                                 ):
                                     taxid2name = ncbi.get_taxid_translator([int(line[taxid_column])])
                                     bestrankdict = ncbi.get_rank([int(line[taxid_column])])
@@ -248,11 +253,14 @@ def get_all_species(ok_read_ids):
         barcode_column = 5
         acc_column = 6
         taxid_column = 4
-        for bc in barcode_list_clean:
+        with open(mypath + csv) as dummy:
+            total_lines = 0
+            dummy.readline()
+            for line in dummy:
+                total_lines += 1
+        for bc in barcodes:
             headers.append(csv.strip(".csv") + bc)
         with open(mypath + csv) as nf:
-            print("Reading csv file...")
-            print()
             linenr = 0
             for line in nf:
                 if ',,' not in line:
@@ -260,9 +268,9 @@ def get_all_species(ok_read_ids):
                     name = ""
                     if linenr > 0:
                         if (
-                            float(line[acc_column]) >= 80 and
-                            line[read_id_column] in ok_read_ids and
-                            line[barcode_column] in barcode_list_clean
+                            float(line[acc_column]) >= 88 and
+                            line[read_id_column] in ok_read_ids.get(csv) and
+                            line[barcode_column] != "NA"
                         ):
                             bestrankdict = ncbi.get_rank([int(line[taxid_column])])
                             bestrank = list(bestrankdict.values())
@@ -286,6 +294,11 @@ def get_all_species(ok_read_ids):
                                     fullname = str(name + " (no rank)")
                                 allnameslist.append(str(fullname))
                 linenr += 1
+                block = int(round(60*(linenr/total_lines)))
+                msg = "\r[{0}] {1}%".format("#"*block + "-"*(60-block), round(linenr/total_lines*100, 2))
+                sys.stdout.write(msg)
+                sys.stdout.flush()
+    print()
     allnames = list(set(allnameslist))
     print(len(allnames), "species found!")
     print()
@@ -303,8 +316,7 @@ def make_rank_csv(headers):
         when calculating the sum of the barcodes.
     """
     print()
-    print("Creating csv file based on rank...\n")
-    print()
+    print("Creating OTU count file...\n")
     with open('otu_count.csv', 'w') as tf:
         phylum = ""
         taxclass = ""
@@ -397,7 +409,7 @@ def percentage_nanopore(filename):
     Raises:
         ZeroDivisionError: Set percantage to 0 if count is 0.
     """
-    print("Create percentage OTU table...")
+    print("Create OTU percentage file...")
     count = 0
     output = "otu_percentage.csv"
     with open(filename) as linecount:
@@ -409,7 +421,6 @@ def percentage_nanopore(filename):
                 sum_row = l.split(',')
             else:
                 pass
-    print("Writing ", output, "...")
     with open(output, 'w') as perc_nano:
         with open(filename) as nano:
             ncount = 0
@@ -458,11 +469,11 @@ if __name__ == '__main__':
     """
     if is_taxadb_up_to_date(DEFAULT_TAXADB):
         start = datetime.now()
-        print("--------------------------------------------------------------------")
+        print("---------------------------------------------------------------------")
         print("Starting OTU script at", datetime.now().strftime("%d-%m-%Y %H:%M:%S"))
-        print("--------------------------------------------------------------------")
+        print("---------------------------------------------------------------------")
         mypath, mypathqc, minqscore, qcfiles, onlyfiles, searchrank, barcodes = get_input()
-        ok_read_ids, barcode_dict, barcode_list_clean = read_basecalling_qc()
+        ok_read_ids, barcode_dict = read_basecalling_qc()
         read_csv()
         end = datetime.now()
         runtime = end - start
@@ -471,7 +482,7 @@ if __name__ == '__main__':
         minutes = int(totalruntime.split(":")[1])
         seconds = int(totalruntime.split(":")[2])
         days = int(hours / 24)
-        print("--------------------------------------------------------------------")
+        print("---------------------------------------------------------------------")
         print("Finished OTU script at", datetime.now().strftime("%d-%m-%Y %H:%M:%S"))
         if days > 0:
             print("Total runtime:", str(days), "d", str(hours), "h", str(minutes), "m", str(seconds), "s")
@@ -481,12 +492,12 @@ if __name__ == '__main__':
             print("Total runtime:", str(minutes), "m", str(seconds), "s")
         else:
             print("Total runtime:", str(seconds), "seconds")
-        print("--------------------------------------------------------------------")
+        print("---------------------------------------------------------------------")
     else:
-        print("--------------------------------------------------------------------")
+        print("---------------------------------------------------------------------")
         print("Taxonomy database is updating...")
-        print("--------------------------------------------------------------------")
+        print("---------------------------------------------------------------------")
         ncbi.update_taxonomy_database()
-        print("--------------------------------------------------------------------")
+        print("---------------------------------------------------------------------")
         print("Update finished!!!")
-        print("--------------------------------------------------------------------")
+        print("---------------------------------------------------------------------")
