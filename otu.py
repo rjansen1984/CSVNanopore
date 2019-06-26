@@ -109,10 +109,12 @@ def read_basecalling_qc():
     """
     print()
     print("Filtering reads...")
-    ok_read_ids = {}
-    read_ids = []
+    # ok_read_ids = {}
+    # read_ids = []
     barcode_list = []
+    massive_read_set = set()
     for qcfile in onlyfiles:
+        read_ids = []
         read_id_column = 1
         barcode_column = 2
         seqlen_column = 6
@@ -124,18 +126,20 @@ def read_basecalling_qc():
                     line = line.split(',')
                     if line[barcode_column] != "NA":
                         if linenr > 0:
-                            if int(line[seqlen_column]) >= 1400 and int(line[seqlen_column]) <= 1700:
-                                try:
+                            try:
+                                if int(line[seqlen_column]) >= 1400 and int(line[seqlen_column]) <= 1700:
                                     if float(line[mean_qscore_column].strip('\n')) >= int(minqscore):
+                                        massive_read_set.add(line[read_id_column])
                                         read_ids.append(line[read_id_column])
                                         barcode_list.append(line[barcode_column])
-                                except ValueError:
-                                    pass
+                            except ValueError:
+                                pass
                 linenr += 1
-        ok_read_ids[qcfile] = read_ids
+        # ok_read_ids[qcfile] = read_ids
+        ok_read_ids = massive_read_set
         barcode_dict = Counter(barcode_list)
         barcode_dict = sorted(barcode_dict.items())
-        print(len(ok_read_ids.get(qcfile)), "reads will be used")
+        # print(len(ok_read_ids.get(qcfile)), "reads will be used")
     return ok_read_ids, barcode_dict
 
 
@@ -155,38 +159,39 @@ def read_csv():
         for bc in barcodes:
             print("Checking", bc, "in", csv)
             with open(mypath + csv) as nf:
+                nf.readline()
+                filecontent = nf.read().split('\n')
                 linenr = 0
-                for line in nf:
-                    if ',,' not in line:
-                        line = line.split(',')
-                        name = ""
-                        if line[barcode_column] == bc:
-                            if linenr > 0:
-                                if (
-                                    float(line[acc_column]) >= 88 and
-                                    line[read_id_column] in ok_read_ids.get(csv)
-                                ):
-                                    taxid2name = ncbi.get_taxid_translator([int(line[taxid_column])])
-                                    bestrankdict = ncbi.get_rank([int(line[taxid_column])])
-                                    bestrank = list(bestrankdict.values())
-                                    for dummytid, tname in taxid2name.items():
-                                        namesplit = tname.split(' ')
-                                        if len(namesplit) > 2:
-                                            splitnr = 0
-                                            for split in namesplit[:2]:
-                                                if splitnr < 1:
-                                                    name += split + ' '
-                                                else:
-                                                    name += split
-                                                splitnr += 1
-                                        else:
-                                            name = str(tname)
-                                    if line[barcode_column] == bc:
-                                        try:
-                                            fullname = str(name + " (" + bestrank[0] + ")")
-                                        except IndexError:
-                                            fullname = str(name + " (no rank)")
-                                        taxnames.append(str(fullname))
+                for content in filecontent:
+                    content = content.split(',')
+                    name = ""
+                    if content[barcode_column] == bc:
+                        if linenr > 0:
+                            if (
+                                float(content[acc_column]) >= 88 and
+                                content[read_id_column] in ok_read_ids
+                            ):
+                                taxid2name = ncbi.get_taxid_translator([int(content[taxid_column])])
+                                bestrankdict = ncbi.get_rank([int(content[taxid_column])])
+                                bestrank = list(bestrankdict.values())
+                                for dummytid, tname in taxid2name.items():
+                                    namesplit = tname.split(' ')
+                                    if len(namesplit) > 2:
+                                        splitnr = 0
+                                        for split in namesplit[:2]:
+                                            if splitnr < 1:
+                                                name += split + ' '
+                                            else:
+                                                name += split
+                                            splitnr += 1
+                                    else:
+                                        name = str(tname)
+                                if content[barcode_column] == bc:
+                                    try:
+                                        fullname = str(name + " (" + bestrank[0] + ")")
+                                    except IndexError:
+                                        fullname = str(name + " (no rank)")
+                                    taxnames.append(str(fullname))
                     linenr += 1
                 namecounter = Counter(taxnames)
                 for k, v in namecounter.items():
@@ -256,25 +261,30 @@ def get_all_species(ok_read_ids):
         with open(mypath + csv) as dummy:
             total_lines = 0
             dummy.readline()
-            for line in dummy:
+            for dummyline in dummy:
                 total_lines += 1
         for bc in barcodes:
             headers.append(csv.strip(".csv") + bc)
         with open(mypath + csv) as nf:
+            nf.readline()
+            filecontent = nf.read().split('\n')
             linenr = 0
-            for line in nf:
-                if ',,' not in line:
-                    line = line.split(',')
-                    name = ""
-                    if linenr > 0:
+            for content in filecontent:
+                content = content.split(',')
+            # for line in nf:
+                # if ',,' not in line:
+                    # line = line.split(',')
+                name = ""
+                if linenr > 0:
+                    try:
                         if (
-                            float(line[acc_column]) >= 88 and
-                            line[read_id_column] in ok_read_ids.get(csv) and
-                            line[barcode_column] != "NA"
+                            float(content[acc_column]) >= 88 and
+                            content[read_id_column] in ok_read_ids and
+                            content[barcode_column] != "NA"
                         ):
-                            bestrankdict = ncbi.get_rank([int(line[taxid_column])])
+                            bestrankdict = ncbi.get_rank([int(content[taxid_column])])
                             bestrank = list(bestrankdict.values())
-                            taxid2name = ncbi.get_taxid_translator([int(line[taxid_column])])
+                            taxid2name = ncbi.get_taxid_translator([int(content[taxid_column])])
                             for dummytid, tname in taxid2name.items():
                                 namesplit = tname.split(' ')
                                 if len(namesplit) > 2:
@@ -293,6 +303,8 @@ def get_all_species(ok_read_ids):
                                 except IndexError:
                                     fullname = str(name + " (no rank)")
                                 allnameslist.append(str(fullname))
+                    except IndexError:
+                        pass
                 linenr += 1
                 block = int(round(60*(linenr/total_lines)))
                 msg = "\r[{0}] {1}%".format("#"*block + "-"*(60-block), round(linenr/total_lines*100, 2))
