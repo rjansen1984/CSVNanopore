@@ -34,6 +34,7 @@ def get_input():
         mypathqc = input("Enter QC files path: ")
         run = input("Enter run number (leave empty for all runs available in folder): ")
         minqscore = input("Please enter the minimun qc score per read: ")
+        minaccuracy = input("Please enter the minimun accuracy per read: ")
         barcodeinput = input("Enter a list of barcodes (comma seperated): ")
         if barcodeinput == "":
             # Default barcodes
@@ -48,7 +49,7 @@ def get_input():
             qcfiles = [f for f in listdir(mypathqc) if isfile(join(mypathqc, f))]
             onlyfiles = [s for s in qcfiles if run + '.csv' in s]
             searchrank = ["phylum","class","order","family", "genus"]
-            return mypath, mypathqc, minqscore, qcfiles, onlyfiles, searchrank, barcodes
+            return mypath, mypathqc, minqscore, minaccuracy, qcfiles, onlyfiles, searchrank, barcodes
 
 
 def is_taxadb_up_to_date(dbfile=DEFAULT_TAXADB):
@@ -165,34 +166,37 @@ def read_csv():
                 for content in filecontent:
                     content = content.split(',')
                     name = ""
-                    if content[barcode_column] == bc:
-                        if linenr > 0:
-                            if (
-                                float(content[acc_column]) >= 88 and
-                                content[read_id_column] in ok_read_ids
-                            ):
-                                taxid2name = ncbi.get_taxid_translator([int(content[taxid_column])])
-                                bestrankdict = ncbi.get_rank([int(content[taxid_column])])
-                                bestrank = list(bestrankdict.values())
-                                for dummytid, tname in taxid2name.items():
-                                    namesplit = tname.split(' ')
-                                    if len(namesplit) > 2:
-                                        splitnr = 0
-                                        for split in namesplit[:2]:
-                                            if splitnr < 1:
-                                                name += split + ' '
-                                            else:
-                                                name += split
-                                            splitnr += 1
-                                    else:
-                                        name = str(tname)
-                                if content[barcode_column] == bc:
-                                    try:
-                                        fullname = str(name + " (" + bestrank[0] + ")")
-                                    except IndexError:
-                                        fullname = str(name + " (no rank)")
-                                    taxnames.append(str(fullname))
-                    linenr += 1
+                    try:
+                        if content[barcode_column] == bc:
+                            if linenr > 0:
+                                if (
+                                    float(content[acc_column]) >= int(minaccuracy) and
+                                    content[read_id_column] in ok_read_ids
+                                ):
+                                    taxid2name = ncbi.get_taxid_translator([int(content[taxid_column])])
+                                    bestrankdict = ncbi.get_rank([int(content[taxid_column])])
+                                    bestrank = list(bestrankdict.values())
+                                    for dummytid, tname in taxid2name.items():
+                                        namesplit = tname.split(' ')
+                                        if len(namesplit) > 2:
+                                            splitnr = 0
+                                            for split in namesplit[:2]:
+                                                if splitnr < 1:
+                                                    name += split + ' '
+                                                else:
+                                                    name += split
+                                                splitnr += 1
+                                        else:
+                                            name = str(tname)
+                                    if content[barcode_column] == bc:
+                                        try:
+                                            fullname = str(name + " (" + bestrank[0] + ")")
+                                        except IndexError:
+                                            fullname = str(name + " (no rank)")
+                                        taxnames.append(str(fullname))
+                        linenr += 1
+                    except (IndexError, ValueError):
+                        pass
                 namecounter = Counter(taxnames)
                 for k, v in namecounter.items():
                     values = []
@@ -247,7 +251,9 @@ def get_all_species(ok_read_ids):
     
     Raises:
         IndexError: Set rank to (no rank) if no rank is found in the NCBI taxonomy database.
+        ValueError: Check if values are correct.
     """
+    taxids = []
     allnameslist = []
     headers = []
     for csv in onlyfiles:
@@ -255,6 +261,7 @@ def get_all_species(ok_read_ids):
         print("Getting all available species from " + csv + "...")
         print()
         read_id_column = 1
+        classification_status = 2
         barcode_column = 5
         acc_column = 6
         taxid_column = 4
@@ -278,10 +285,13 @@ def get_all_species(ok_read_ids):
                 if linenr > 0:
                     try:
                         if (
-                            float(content[acc_column]) >= 88 and
+                            float(content[acc_column]) >= int(minaccuracy) and
                             content[read_id_column] in ok_read_ids and
-                            content[barcode_column] != "NA"
+                            content[barcode_column] != "NA" and
+                            int(content[taxid_column]) not in taxids and 
+                            content[classification_status] == "Classification successful"
                         ):
+                            taxids.append(int(content[taxid_column]))
                             bestrankdict = ncbi.get_rank([int(content[taxid_column])])
                             bestrank = list(bestrankdict.values())
                             taxid2name = ncbi.get_taxid_translator([int(content[taxid_column])])
@@ -303,7 +313,7 @@ def get_all_species(ok_read_ids):
                                 except IndexError:
                                     fullname = str(name + " (no rank)")
                                 allnameslist.append(str(fullname))
-                    except IndexError:
+                    except (IndexError, ValueError):
                         pass
                 linenr += 1
                 block = int(round(60*(linenr/total_lines)))
@@ -484,7 +494,7 @@ if __name__ == '__main__':
         print("---------------------------------------------------------------------")
         print("Starting OTU script at", datetime.now().strftime("%d-%m-%Y %H:%M:%S"))
         print("---------------------------------------------------------------------")
-        mypath, mypathqc, minqscore, qcfiles, onlyfiles, searchrank, barcodes = get_input()
+        mypath, mypathqc, minqscore, minaccuracy, qcfiles, onlyfiles, searchrank, barcodes = get_input()
         ok_read_ids, barcode_dict = read_basecalling_qc()
         read_csv()
         end = datetime.now()
